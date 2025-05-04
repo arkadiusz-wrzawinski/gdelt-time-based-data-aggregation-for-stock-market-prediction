@@ -9,7 +9,7 @@ from downloading import download_all
 async def main():
     cache: bool = True
     total_stages: int = 3
-    years_to_process: list[int] = [2023]
+    years_to_process: list[int] = [2021, 2022, 2023, 2024, 2025]
 
     print("Processing data")
     print("Using cache" if cache else "Not using cache")
@@ -53,13 +53,13 @@ async def main():
         await download_all(events[year], "event", cache=cache)
         print("")
 
-        # print(f"Downloading details for year {year}")
-        # await download_all(details[year], "detail", cache=cache)
-        # print("")
-        #
-        # print(f"Downloading mentions for year {year}")
-        # await download_all(mentions[year], "mention", cache=cache)
-        # print("")
+        print(f"Downloading details for year {year}")
+        await download_all(details[year], "detail", cache=cache)
+        print("")
+
+        print(f"Downloading mentions for year {year}")
+        await download_all(mentions[year], "mention", cache=cache)
+        print("")
 
 if __name__ == "__main__":
     asyncio.run(main())

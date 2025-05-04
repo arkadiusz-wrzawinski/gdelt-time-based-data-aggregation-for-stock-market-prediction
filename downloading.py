@@ -1,4 +1,7 @@
+import faulthandler
 import os
+import sys
+import traceback
 from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
@@ -9,9 +12,9 @@ import gzip
 import zipfile
 import re
 import gc
-import pyarrow
 
 from aiohttp import ClientResponseError
+from pandas.errors import ParserError
 
 from progress import make_progress
 
@@ -193,7 +196,7 @@ def _maybe_decompress(raw: bytes) -> bytes:
     return raw
 
 
-def parse_csv(raw: bytes, data_type: str) -> pd.DataFrame:
+def parse_csv(raw: bytes, data_type: str, path: str) -> None:
     names = {"event": event_cols, "mention": mentions_cols, "detail": details_cols}[data_type]
     columns = {
         "event": ["GlobalEventID", "SQLDATE", "EventBaseCode", "QuadClass", "GoldsteinScale", "ActionGeo_CountryCode"],
@@ -214,7 +217,6 @@ def parse_csv(raw: bytes, data_type: str) -> pd.DataFrame:
                     names=names,
                     encoding=enc,
                     compression="infer",
-                    engine="pyarrow"
                 )
             else:
                 df = pd.read_csv(
@@ -225,7 +227,6 @@ def parse_csv(raw: bytes, data_type: str) -> pd.DataFrame:
                     encoding="utf-8",
                     encoding_errors="replace",
                     compression="infer",
-                    engine="pyarrow"
                 )
             break
         except UnicodeDecodeError:
@@ -233,12 +234,11 @@ def parse_csv(raw: bytes, data_type: str) -> pd.DataFrame:
 
 
     if data_type == "detail":
+        df = df[df['GCAM'].notna()]
         df[["WordCount", "Negative", "Positive", "Finance"]] = df["GCAM"].apply(extract_gcam)
 
-    return df[columns]
+    df = df[columns]
 
-
-def save_gz(df: pd.DataFrame, path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     df.to_csv(path, index=False, compression="gzip")
 
@@ -250,18 +250,16 @@ async def download_dataframe(url: str, data_type: str, year: str, date: str, poo
 
     async with aiohttp.ClientSession() as session:
         raw = await fetch_bytes(session, url)
-    loop = asyncio.get_running_loop()                   # handy shortcut
+    loop = asyncio.get_running_loop()
 
-    # ---------- CPU-bound work in another *process* ------------------
-    df   = await loop.run_in_executor(                  # parse
-                pool, parse_csv, raw, data_type)
+    await loop.run_in_executor(pool, parse_csv, raw, data_type, file_path)
 
-    await loop.run_in_executor(                         # gzip→disk
-                pool, save_gz, df, file_path)
-
+def _init_worker():
+    faulthandler.enable()
+    sys.excepthook = lambda exc, val, tb: print("WORKER EXCEPTION:","".join(traceback.format_exception(exc, val, tb)),file=sys.stderr, flush=True)
 
 
-async def download_all(master: pd.DataFrame,data_type: str,cache: bool = False,concurrency: int = 20):
+async def download_all(master: pd.DataFrame,data_type: str,cache: bool = False,concurrency: int = 10):
     old = gc.isenabled()
     gc.disable()
     total = len(master)
@@ -270,14 +268,21 @@ async def download_all(master: pd.DataFrame,data_type: str,cache: bool = False,c
     progress = make_progress()
     task_id = progress.add_task(f"Downloading", total=total)
 
+
     with progress:
-        with ProcessPoolExecutor(max_workers=concurrency) as pool:
+        with ProcessPoolExecutor(max_workers=concurrency, initializer=_init_worker) as pool:
             async with asyncio.TaskGroup() as task_group:
                 for url, year, date in master[["url", "year", "date"]].itertuples(False):
                     async def _worker(u=url, y=str(year), d=date):
                         async with semaphore:
                             try:
                                 await download_dataframe(u, data_type, y, d, pool, cache)
+                            except ClientResponseError as exc:
+                                progress.console.print(f"[red] {d} failed: {type(exc).__name__}[/]  {exc}")
+                            except ParserError as exc:
+                                progress.console.print(f"[red] {d} failed: {type(exc).__name__}[/]  {exc}")
+                                if str(exc) != "Empty CSV file":
+                                    pass
                             except Exception as exc:
                                 progress.console.print(f"[red] {d} failed: {type(exc).__name__}[/]  {exc}")
                             finally:
