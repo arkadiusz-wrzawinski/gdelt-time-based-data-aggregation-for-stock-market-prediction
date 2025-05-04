@@ -53,13 +53,13 @@ async def main():
         await download_all(events[year], "event", cache=cache)
         print("")
 
-        print(f"Downloading details for year {year}")
-        await download_all(details[year], "detail", cache=cache)
-        print("")
-
-        print(f"Downloading mentions for year {year}")
-        await download_all(mentions[year], "mention", cache=cache)
-        print("")
+        # print(f"Downloading details for year {year}")
+        # await download_all(details[year], "detail", cache=cache)
+        # print("")
+        #
+        # print(f"Downloading mentions for year {year}")
+        # await download_all(mentions[year], "mention", cache=cache)
+        # print("")
 
 if __name__ == "__main__":
     asyncio.run(main())

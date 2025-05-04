@@ -1,4 +1,6 @@
 import os
+from concurrent.futures import ProcessPoolExecutor
+
 import pandas as pd
 import asyncio
 import aiohttp
@@ -6,6 +8,8 @@ import io
 import gzip
 import zipfile
 import re
+import gc
+import pyarrow
 
 from aiohttp import ClientResponseError
 
@@ -210,6 +214,7 @@ def parse_csv(raw: bytes, data_type: str) -> pd.DataFrame:
                     names=names,
                     encoding=enc,
                     compression="infer",
+                    engine="pyarrow"
                 )
             else:
                 df = pd.read_csv(
@@ -220,6 +225,7 @@ def parse_csv(raw: bytes, data_type: str) -> pd.DataFrame:
                     encoding="utf-8",
                     encoding_errors="replace",
                     compression="infer",
+                    engine="pyarrow"
                 )
             break
         except UnicodeDecodeError:
@@ -237,19 +243,27 @@ def save_gz(df: pd.DataFrame, path: str) -> None:
     df.to_csv(path, index=False, compression="gzip")
 
 
-async def download_dataframe(url: str, data_type: str, year: str, date: str, cache: bool = False) -> None:
+async def download_dataframe(url: str, data_type: str, year: str, date: str, pool: ProcessPoolExecutor, cache: bool = False) -> None:
     file_path = make_file_path(data_type, year, date)
     if cache and os.path.exists(file_path):
         return
 
     async with aiohttp.ClientSession() as session:
         raw = await fetch_bytes(session, url)
-    df = await asyncio.to_thread(parse_csv, raw, data_type)
-    await asyncio.to_thread(save_gz, df, file_path)
+    loop = asyncio.get_running_loop()                   # handy shortcut
+
+    # ---------- CPU-bound work in another *process* ------------------
+    df   = await loop.run_in_executor(                  # parse
+                pool, parse_csv, raw, data_type)
+
+    await loop.run_in_executor(                         # gzip→disk
+                pool, save_gz, df, file_path)
 
 
 
 async def download_all(master: pd.DataFrame,data_type: str,cache: bool = False,concurrency: int = 20):
+    old = gc.isenabled()
+    gc.disable()
     total = len(master)
     semaphore = asyncio.Semaphore(concurrency)
 
@@ -257,14 +271,17 @@ async def download_all(master: pd.DataFrame,data_type: str,cache: bool = False,c
     task_id = progress.add_task(f"Downloading", total=total)
 
     with progress:
-        async with asyncio.TaskGroup() as task_group:
-            for url, year, date in master[["url", "year", "date"]].itertuples(False):
-                async def _worker(u=url, y=str(year), d=date):
-                    async with semaphore:
-                        try:
-                            await download_dataframe(u, data_type, y, d, cache)
-                        except Exception as exc:
-                            progress.console.print(f"[red] {d} failed: {type(exc).__name__}[/]  {exc}")
-                        finally:
-                            progress.update(task_id, advance=1)
-                task_group.create_task(_worker())
+        with ProcessPoolExecutor(max_workers=concurrency) as pool:
+            async with asyncio.TaskGroup() as task_group:
+                for url, year, date in master[["url", "year", "date"]].itertuples(False):
+                    async def _worker(u=url, y=str(year), d=date):
+                        async with semaphore:
+                            try:
+                                await download_dataframe(u, data_type, y, d, pool, cache)
+                            except Exception as exc:
+                                progress.console.print(f"[red] {d} failed: {type(exc).__name__}[/]  {exc}")
+                            finally:
+                                progress.update(task_id, advance=1)
+                    task_group.create_task(_worker())
+    if old:
+        gc.enable()
