@@ -170,8 +170,8 @@ def extract_gcam(gcam: str):
             negative = int(m.group(2))
         elif m.group(3): # c3.2    POSITIVE
             positive = int(m.group(3))
-        elif m.group(3): # c4.16   FINANCE
-            finance = int(m.group(3))
+        elif m.group(4): # c4.16   FINANCE
+            finance = int(m.group(4))
     return pd.Series([wc, negative, positive, finance])
 
 def make_file_path(data_type: str, year: str, date: str):
@@ -206,28 +206,18 @@ def parse_csv(raw: bytes, data_type: str, path: str) -> None:
 
     plain = _maybe_decompress(raw)
 
-    df: pd.DataFrame
-    for enc in ("utf-8", "latin-1", ""):
+    df: pd.DataFrame = pd.DataFrame()
+    for enc in ("utf-8", "latin-1", None):
         try:
-            if enc != "":
-                df = pd.read_csv(
-                    io.BytesIO(plain),
-                    sep="\t",
-                    header=None,
-                    names=names,
-                    encoding=enc,
-                    compression="infer",
-                )
-            else:
-                df = pd.read_csv(
-                    io.BytesIO(plain),
-                    sep="\t",
-                    header=None,
-                    names=names,
-                    encoding="utf-8",
-                    encoding_errors="replace",
-                    compression="infer",
-                )
+            df = pd.read_csv(
+                io.BytesIO(plain),
+                sep="\t",
+                header=None,
+                names=names,
+                encoding=enc if enc is not None else "utf-8",
+                encoding_errors="replace" if enc is not None else "strict",
+                compression="infer",
+            )
             break
         except UnicodeDecodeError:
             pass
@@ -259,7 +249,7 @@ def _init_worker():
     sys.excepthook = lambda exc, val, tb: print("WORKER EXCEPTION:","".join(traceback.format_exception(exc, val, tb)),file=sys.stderr, flush=True)
 
 
-async def download_all(master: pd.DataFrame,data_type: str,cache: bool = False,concurrency: int = 10):
+async def download_all(master: pd.DataFrame, data_type: str, cache: bool = False, concurrency: int = 10) -> None:
     old = gc.isenabled()
     gc.disable()
     total = len(master)
