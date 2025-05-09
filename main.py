@@ -97,6 +97,7 @@ async def main():
     aggregate(["spx", "btc"], days=5)
     aggregate(["spx", "btc"], days=8)
     aggregate(["spx", "btc"], days=13)
+    aggregate(["spx", "btc"], days=21)
     print(Fore.GREEN + f"Progress 10/{total_stages}" + Style.RESET_ALL)
     print("Finished aggregating data all data")
     print("")
