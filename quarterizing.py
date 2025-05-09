@@ -11,23 +11,27 @@ def make_quarter_path(data_type: str, year: int, quarter: int):
     return os.path.join("data/files/quarters/", data_type, f"{str(year)}-{str(quarter)}.csv.gz")
 
 def join_files(files: list[str], dirname: str, data_type: str, year: int, quarter: int) -> None:
-    df = pd.concat(map(pd.read_csv, [os.path.join(dirname, file) for file in files]))
+    data = list(map(pd.read_csv, [os.path.join(dirname, file) for file in files]))
+    print(f"Files in {quarter} quarter of {year} year: {len(data)}")
 
-    if data_type == "event":
-        df = df[df["EventBaseCode"] != ""]
-        df = df[df["EventBaseCode"] != "---"]
-        df["EventBaseCode"] = df["EventBaseCode"].astype(str).str.zfill(3).str[0:2].astype(int)
+    if len(data) > 0:
+        df = pd.concat(data)
 
-    path = make_quarter_path(data_type, year, quarter)
+        if data_type == "event":
+            df = df[df["EventBaseCode"] != ""]
+            df = df[df["EventBaseCode"] != "---"]
+            df["EventBaseCode"] = df["EventBaseCode"].astype(str).str.zfill(3).str[0:2].astype(int)
 
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    df.to_csv(path, index=False, compression="gzip")
+        path = make_quarter_path(data_type, year, quarter)
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        df.to_csv(path, index=False, compression="gzip")
 
 
 async def quarterize(quarters_in_years: list[tuple[list[int], int]], data_type: str, cache: bool = False) -> None:
     old = gc.isenabled()
     gc.disable()
-    semaphore = asyncio.Semaphore(10)
+    semaphore = asyncio.Semaphore(4)
 
     total = len(quarters_in_years) * 4
 
@@ -35,7 +39,7 @@ async def quarterize(quarters_in_years: list[tuple[list[int], int]], data_type: 
     task_id = progress.add_task(f"Quarterizing", total=total)
 
     with progress:
-        with ProcessPoolExecutor(max_workers=10, initializer=_init_worker) as pool:
+        with ProcessPoolExecutor(max_workers=4, initializer=_init_worker) as pool:
             async with asyncio.TaskGroup() as task_group:
                 for quarters, year in quarters_in_years:
                     dirname = os.path.dirname(make_file_path(data_type, str(year), ""))

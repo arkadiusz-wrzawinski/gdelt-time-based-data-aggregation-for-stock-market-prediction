@@ -98,8 +98,8 @@ event_cols = [
 
 mentions_cols = [
     "GlobalEventID",            # 01 – unique 64-bit identifier for this event row
-    "SQLDATE",                  # 02 – event’s SQLDATE as Unix ms  (YYYYMMDDhhmmss * 1000)
-    "MentionTimeDate",          # 03 – when THIS mention was published / first seen (Unix ms)
+    "SQLDATE",                  # 02 – event’s SQLDATE (YYYYMMDDhhmmss)
+    "MentionTimeDate",          # 03 – when THIS mention was published / first seen (YYYYMMDDhhmmss)
     "MentionType",              # 04 – 1=story lead, 2=story text, 3=blog, etc.
     "MentionSourceName",        # 05 – outlet ID (domain-style string)
     "MentionIdentifier",        # 06 – the article URL (or broadcast clip ID)
