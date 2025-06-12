@@ -14,9 +14,7 @@ async def main():
     cache: bool = True
     total_stages: int = 10
     years_to_process: list[int] = [2021, 2022, 2023, 2024, 2025]
-    # years_to_process: list[int] = [2024]
     quarters_in_years: list[tuple[list[int], int]] = [([1, 2, 3, 4], year) for year in years_to_process]
-    # quarters_in_years: list[tuple[list[int], int]] = [([1], year) for year in years_to_process]
 
     print("Processing data")
     print("Using cache" if cache else "Not using cache")

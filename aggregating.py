@@ -1,13 +1,8 @@
-import asyncio
-import gc
 import os
-from concurrent.futures.process import ProcessPoolExecutor
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 import joblib
-from downloading import _init_worker, make_file_path
 from financial import make_financial_path
-from progress import make_progress
 
 def make_aggregated_path(days: int):
     return os.path.join("data/files/aggregated/", str(days), f"aggregate.csv")
@@ -73,14 +68,15 @@ def aggregate(names: list[str], days: int):
     aggregated_df = aggregated_df.iloc[14:]
     for name in names:
         financial = financials[name]
-        aggregated_df = pd.merge(aggregated_df, financial, on="Timestamp", how="left", )
+        aggregated_df = pd.merge(aggregated_df, financial, on="Timestamp", how="left")
+        aggregated_df.columns = [*aggregated_df.columns[:-1], name]
     aggregated_df = aggregated_df.drop(columns=["Timestamp"])
 
     mention_columns = [f"{i}_total_mentions" for i in range(1, 21)]
 
     scaler = MinMaxScaler(feature_range=(0, 1))
 
-    # aggregated_df[mention_columns] = scaler.fit_transform(aggregated_df[mention_columns])
+    aggregated_df[mention_columns] = scaler.fit_transform(aggregated_df[mention_columns])
 
     aggregated_path = make_aggregated_path(days)
     os.makedirs(os.path.dirname(aggregated_path), exist_ok=True)
